@@ -21,38 +21,43 @@ app.post("/webhook", async (req, res) => {
     const symbol = data.symbol || "PF_LINKUSD";
     const volume = String(data.volume || "8");
 
-    const endpointPath = "/derivatives/api/v3/sendorder";
-    const url = "https://futures.kraken.com" + endpointPath;
+    const path = "/0/private/AddOrder";
+    const url = "https://api.kraken.com" + path;
     const nonce = Date.now().toString();
 
-    const side = action === "buy" ? "buy" : "sell";
-    const postData = `orderType=mkt&side=${side}&size=${volume}&symbol=${symbol}`;
+    // Convert symbols if needed (e.g., PF_LINKUSD -> LINKUSD)
+    const pair = symbol.replace("PF_", "");
 
-    // 1. SHA-256 Digest over (postData + nonce + endpointPath)
+    const postData = new URLSearchParams({
+      nonce: nonce,
+      ordertype: "market",
+      type: action === "buy" ? "buy" : "sell",
+      volume: volume,
+      pair: pair
+    }).toString();
+
+    // Standard Kraken v1 API Signature Calculation
     const sha256Hash = crypto.createHash("sha256")
-      .update(postData + nonce + endpointPath)
+      .update(nonce + postData)
       .digest();
 
-    // 2. Base64-decode secret and calculate HMAC-SHA512
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer)
-      .update(sha256Hash)
+      .update(Buffer.concat([Buffer.from(path), sha256Hash]))
       .digest("base64");
 
-    // 3. Send POST request to Kraken Futures
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "APIKey": API_KEY,
-        "Authent": apiSignature,
-        "Nonce": nonce,
+        "API-Key": API_KEY,
+        "API-Sign": apiSignature,
         "Content-Type": "application/x-www-form-urlencoded"
       },
       body: postData
     });
 
     const resData = await response.text();
-    console.log("Kraken Response:", resData);
+    console.log("Kraken API Response:", resData);
 
     res.status(200).send(resData);
   } catch (err) {
