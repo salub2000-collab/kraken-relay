@@ -7,6 +7,12 @@ app.use(express.json());
 const API_KEY = process.env.KRAKEN_API_KEY || "V53RS1q+ukUF4mRVYJQ1+yWdy1goe9hX9rO7y7XwuuhPI6q5Y6dwqiKg";
 const API_SECRET = process.env.KRAKEN_API_SECRET || "t7h5D58kJfVaxyGT8coLsKSHpv083/J6GQuExmAaHf4v1E/A3/ZszOTZu39LUAJocvsD8cOnBnilpz7jb0sa8w==";
 
+// Health check endpoint for Render
+app.get("/", (req, res) => {
+  res.send("Kraken Webhook Relay is Active");
+});
+
+// Primary Webhook Endpoint
 app.post("/webhook", async (req, res) => {
   try {
     const data = req.body;
@@ -17,34 +23,6 @@ app.post("/webhook", async (req, res) => {
 
     const endpointPath = "/derivatives/api/v3/sendorder";
     const url = "https://futures.kraken.com" + endpointPath;
-    const nonce = Date.now().It looks like the `cat` command for `index.js` was cut off at the beginning, so `index.js` wasn't completely or properly saved.
-
-Run the following commands in Terminal to cleanly overwrite both files and prepare your Git repository:
-
-### 1. Rewrite `index.js` Completely
-Paste this entire block into Terminal and press **Enter**:
-
-```bash
-cat << 'EOF' > index.js
-const express = require("express");
-const crypto = require("crypto");
-
-const app = express();
-app.use(express.json());
-
-const API_KEY = process.env.KRAKEN_API_KEY || "V53RS1q+ukUF4mRVYJQ1+yWdy1goe9hX9rO7y7XwuuhPI6q5Y6dwqiKg";
-const API_SECRET = process.env.KRAKEN_API_SECRET || "t7h5D58kJfVaxyGT8coLsKSHpv083/J6GQuExmAaHf4v1E/A3/ZszOTZu39LUAJocvsD8cOnBnilpz7jb0sa8w==";
-
-app.post("/webhook", async (req, res) => {
-  try {
-    const data = req.body;
-    
-    const action = (data.action || "buy").toLowerCase();
-    const symbol = data.symbol || "PF_LINKUSD";
-    const volume = String(data.volume || "8");
-
-    const endpointPath = "/derivatives/api/v3/sendorder";
-    const url = "[https://futures.kraken.com](https://futures.kraken.com)" + endpointPath;
     const nonce = Date.now().toString();
 
     const side = action === "buy" ? "buy" : "sell";
