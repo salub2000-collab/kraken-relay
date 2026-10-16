@@ -7,7 +7,7 @@ app.use(express.json());
 const API_KEY = process.env.KRAKEN_API_KEY || "V53RS1q+ukUF4mRVYJQ1+yWdy1goe9hX9rO7y7XwuuhPI6q5Y6dwqiKg";
 const API_SECRET = process.env.KRAKEN_API_SECRET || "t7h5D58kJfVaxyGT8coLsKSHpv083/J6GQuExmAaHf4v1E/A3/ZszOTZu39LUAJocvsD8cOnBnilpz7jb0sa8w==";
 
-// Health check endpoint for Render
+// Health check endpoint
 app.get("/", (req, res) => {
   res.send("Kraken Webhook Relay is Active");
 });
