@@ -1,15 +1,16 @@
 const express = require("express");
 const crypto = require("crypto");
+const https = require("https");
 
 const app = express();
 app.use(express.json());
 
-// Root health check
+// Root health check endpoint
 app.get("/", (req, res) => {
   res.send("Kraken Futures Webhook Relay is Active");
 });
 
-// Primary Webhook Endpoint
+// Primary Webhook Endpoint for TradingView Alerts
 app.post("/webhook", async (req, res) => {
   try {
     const data = req.body;
@@ -24,52 +25,63 @@ app.post("/webhook", async (req, res) => {
     const size = String(data.size || data.volume || "1");
 
     const endpointPath = "/derivatives/api/v3/sendorder";
-    const baseUrl = "https://demo-futures.kraken.com";
+    const hostname = "demo-futures.kraken.com";
     const nonce = Date.now().toString();
 
-    // Query string parameters
-    const params = new URLSearchParams({
+    // Build URL query string
+    const queryParams = new URLSearchParams({
       orderType: orderType,
       symbol: symbol,
       side: side,
       size: size
-    });
+    }).toString();
 
-    const queryString = params.toString();
-
-    // HMAC Signature: SHA512( endpointPath + SHA256( queryString + nonce ), API_SECRET )
-    const hash = crypto.createHash("sha256").update(queryString + nonce).digest();
+    // Futures HMAC-SHA512 Signature Calculation
+    const hash = crypto.createHash("sha256").update(queryParams + nonce).digest();
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer)
       .update(Buffer.concat([Buffer.from(endpointPath), hash]))
       .digest("base64");
 
-    const targetUrl = `${baseUrl}${endpointPath}?${queryString}`;
-
-    const response = await fetch(targetUrl, {
+    const requestOptions = {
+      hostname: hostname,
+      port: 443,
+      path: `${endpointPath}?${queryParams}`,
       method: "POST",
       headers: {
         "APIKey": API_KEY,
         "Authent": apiSignature,
         "nonce": nonce,
-        "Accept": "application/json"
+        "Accept": "application/json",
+        "Content-Type": "application/json"
       }
+    };
+
+    // Direct HTTPS Request Execution
+    const krakenReq = https.request(requestOptions, (krakenRes) => {
+      let body = "";
+      krakenRes.on("data", (chunk) => body += chunk);
+      krakenRes.on("end", () => {
+        let parsedBody;
+        try {
+          parsedBody = JSON.parse(body);
+        } catch (e) {
+          parsedBody = body;
+        }
+        console.log(`[ORDER EXECUTION] ${side.toUpperCase()} ${size} ${symbol}:`, parsedBody);
+        res.status(200).json({ status: "success", kraken_response: parsedBody });
+      });
     });
 
-    const resText = await response.text();
-    let resData;
-    try {
-      resData = JSON.parse(resText);
-    } catch (e) {
-      resData = resText;
-    }
+    krakenReq.on("error", (err) => {
+      console.error("Kraken HTTPS Request Error:", err);
+      res.status(500).json({ status: "error", message: err.message });
+    });
 
-    console.log(`[ORDER EXECUTION] ${side.toUpperCase()} ${size} ${symbol}:`, resData);
-
-    res.status(200).json({ status: "success", kraken_response: resData });
+    krakenReq.end();
   } catch (err) {
-    console.error("Relay Error:", err);
-    res.status(500).json({ status: "error", message: err.message, stack: err.stack });
+    console.error("Relay Internal Error:", err);
+    res.status(500).json({ status: "error", message: err.message });
   }
 });
 
