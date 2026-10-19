@@ -4,12 +4,12 @@ const crypto = require("crypto");
 const app = express();
 app.use(express.json());
 
-// Root health check endpoint
+// Root health check
 app.get("/", (req, res) => {
   res.send("Kraken Futures Webhook Relay is Active");
 });
 
-// Primary Webhook Endpoint for TradingView Alerts
+// Primary Webhook Endpoint
 app.post("/webhook", async (req, res) => {
   try {
     const data = req.body;
@@ -27,39 +27,49 @@ app.post("/webhook", async (req, res) => {
     const baseUrl = "https://demo-futures.kraken.com";
     const nonce = Date.now().toString();
 
-    const queryParams = new URLSearchParams({
+    // Query string parameters
+    const params = new URLSearchParams({
       orderType: orderType,
       symbol: symbol,
       side: side,
       size: size
-    }).toString();
+    });
 
-    // Futures HMAC Signature Calculation
-    const hash = crypto.createHash("sha256").update(queryParams + nonce).digest();
+    const queryString = params.toString();
+
+    // HMAC Signature: SHA512( endpointPath + SHA256( queryString + nonce ), API_SECRET )
+    const hash = crypto.createHash("sha256").update(queryString + nonce).digest();
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer)
       .update(Buffer.concat([Buffer.from(endpointPath), hash]))
       .digest("base64");
 
-    const fullUrl = `${baseUrl}${endpointPath}?${queryParams}`;
+    const targetUrl = `${baseUrl}${endpointPath}?${queryString}`;
 
-    const response = await fetch(fullUrl, {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "APIKey": API_KEY,
         "Authent": apiSignature,
         "nonce": nonce,
-        "Content-Type": "application/json"
+        "Accept": "application/json"
       }
     });
 
-    const resData = await response.json();
-    console.log(`[ORDER SUCCESS] ${side.toUpperCase()} ${size} ${symbol}:`, resData);
+    const resText = await response.text();
+    let resData;
+    try {
+      resData = JSON.parse(resText);
+    } catch (e) {
+      resData = resText;
+    }
+
+    console.log(`[ORDER EXECUTION] ${side.toUpperCase()} ${size} ${symbol}:`, resData);
 
     res.status(200).json({ status: "success", kraken_response: resData });
   } catch (err) {
     console.error("Relay Error:", err);
-    res.status(500).json({ status: "error", message: err.message });
+    res.status(500).json({ status: "error", message: err.message, stack: err.stack });
   }
 });
 
