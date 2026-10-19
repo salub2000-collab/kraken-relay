@@ -10,7 +10,55 @@ app.get("/", (req, res) => {
   res.send("Kraken Futures Webhook Relay is Active");
 });
 
-// Primary Webhook Endpoint for TradingView Alerts
+// Helper function to handle HTTPS requests with redirect support
+function makeKrakenRequest(hostname, endpointPath, queryParams, apiKey, apiSignature, nonce) {
+  return new Promise((resolve, reject) => {
+    const requestOptions = {
+      hostname: hostname,
+      port: 443,
+      path: `${endpointPath}?${queryParams}`,
+      method: "POST",
+      headers: {
+        "APIKey": apiKey,
+        "Authent": apiSignature,
+        "nonce": nonce,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "NodeJS-Kraken-Relay"
+      }
+    };
+
+    const req = https.request(requestOptions, (res) => {
+      // Handle HTTP redirects (301, 302, 307, 308)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, `https://${hostname}`);
+        return makeKrakenRequest(
+          redirectUrl.hostname,
+          redirectUrl.pathname,
+          redirectUrl.search ? redirectUrl.search.substring(1) : queryParams,
+          apiKey,
+          apiSignature,
+          nonce
+        ).then(resolve).catch(reject);
+      }
+
+      let body = "";
+      res.on("data", (chunk) => body += chunk);
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          resolve(body);
+        }
+      });
+    });
+
+    req.on("error", (err) => reject(err));
+    req.end();
+  });
+}
+
+// Primary Webhook Endpoint for TradingView
 app.post("/webhook", async (req, res) => {
   try {
     const data = req.body;
@@ -24,11 +72,12 @@ app.post("/webhook", async (req, res) => {
     const orderType = (data.type || data.ordertype || "mkt").toLowerCase();
     const size = String(data.size || data.volume || "1");
 
-    const endpointPath = "/derivatives/api/v3/sendorder";
+    // Exact casing for Kraken Futures API: /derivatives/api/v3/sendOrder
+    const endpointPath = "/derivatives/api/v3/sendOrder";
     const hostname = "demo-futures.kraken.com";
     const nonce = Date.now().toString();
 
-    // Build URL query string
+    // Query parameters
     const queryParams = new URLSearchParams({
       orderType: orderType,
       symbol: symbol,
@@ -36,51 +85,20 @@ app.post("/webhook", async (req, res) => {
       size: size
     }).toString();
 
-    // Futures HMAC-SHA512 Signature Calculation
+    // Futures HMAC Signature Calculation: SHA512( endpointPath + SHA256( queryParams + nonce ), API_SECRET )
     const hash = crypto.createHash("sha256").update(queryParams + nonce).digest();
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer)
       .update(Buffer.concat([Buffer.from(endpointPath), hash]))
       .digest("base64");
 
-    const requestOptions = {
-      hostname: hostname,
-      port: 443,
-      path: `${endpointPath}?${queryParams}`,
-      method: "POST",
-      headers: {
-        "APIKey": API_KEY,
-        "Authent": apiSignature,
-        "nonce": nonce,
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-      }
-    };
+    const response = await makeKrakenRequest(hostname, endpointPath, queryParams, API_KEY, apiSignature, nonce);
 
-    // Direct HTTPS Request Execution
-    const krakenReq = https.request(requestOptions, (krakenRes) => {
-      let body = "";
-      krakenRes.on("data", (chunk) => body += chunk);
-      krakenRes.on("end", () => {
-        let parsedBody;
-        try {
-          parsedBody = JSON.parse(body);
-        } catch (e) {
-          parsedBody = body;
-        }
-        console.log(`[ORDER EXECUTION] ${side.toUpperCase()} ${size} ${symbol}:`, parsedBody);
-        res.status(200).json({ status: "success", kraken_response: parsedBody });
-      });
-    });
+    console.log(`[ORDER EXECUTION] ${side.toUpperCase()} ${size} ${symbol}:`, response);
+    res.status(200).json({ status: "success", kraken_response: response });
 
-    krakenReq.on("error", (err) => {
-      console.error("Kraken HTTPS Request Error:", err);
-      res.status(500).json({ status: "error", message: err.message });
-    });
-
-    krakenReq.end();
   } catch (err) {
-    console.error("Relay Internal Error:", err);
+    console.error("Relay Error:", err);
     res.status(500).json({ status: "error", message: err.message });
   }
 });
