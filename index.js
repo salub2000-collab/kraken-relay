@@ -24,14 +24,19 @@ app.post("/webhook", async (req, res) => {
     const orderType = (data.type || data.ordertype || "mkt").toLowerCase();
     const size = String(data.size || data.volume || "1");
 
-    const endpointPath = "/derivatives/api/v3/sendorder";
+    const endpointPath = "/api/v3/sendorder";
     const hostname = "demo-futures.kraken.com";
     const nonce = Date.now().toString();
 
-    // Query string required by Kraken Futures API
-    const postData = `orderType=${orderType}&side=${side}&size=${size}&symbol=${symbol}`;
+    // Form-encoded body payload
+    const postData = new URLSearchParams({
+      orderType: orderType,
+      symbol: symbol,
+      side: side,
+      size: size
+    }).toString();
 
-    // Kraken Futures Auth Algorithm: HMAC-SHA512( SHA256(postData + nonce + endpointPath), secret )
+    // Signature: HMAC-SHA512( SHA256(postData + nonce + endpointPath), secret )
     const hash = crypto.createHash("sha256").update(postData + nonce + endpointPath).digest();
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer).update(hash).digest("base64");
@@ -39,14 +44,15 @@ app.post("/webhook", async (req, res) => {
     const requestOptions = {
       hostname: hostname,
       port: 443,
-      path: `${endpointPath}?${postData}`,
+      path: endpointPath,
       method: "POST",
       headers: {
         "APIKey": API_KEY,
         "Authent": apiSignature,
         "nonce": nonce,
         "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(postData)
       }
     };
 
@@ -70,6 +76,7 @@ app.post("/webhook", async (req, res) => {
       res.status(500).json({ status: "error", message: err.message });
     });
 
+    reqKraken.write(postData);
     reqKraken.end();
 
   } catch (err) {
