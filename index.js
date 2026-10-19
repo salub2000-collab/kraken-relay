@@ -24,6 +24,7 @@ app.post("/webhook", async (req, res) => {
     const orderType = (data.type || data.ordertype || "mkt").toLowerCase();
     const size = String(data.size || data.volume || "1");
 
+    // Correct Kraken Futures API Path
     const endpointPath = "/api/v3/sendorder";
     const hostname = "demo-futures.kraken.com";
     const nonce = Date.now().toString();
@@ -36,7 +37,7 @@ app.post("/webhook", async (req, res) => {
       size: size
     }).toString();
 
-    // Signature: HMAC-SHA512( SHA256(postData + nonce + endpointPath), secret )
+    // Kraken Futures Signature Algorithm: HMAC-SHA512( SHA256(postData + nonce + endpointPath), API_SECRET )
     const hash = crypto.createHash("sha256").update(postData + nonce + endpointPath).digest();
     const secretBuffer = Buffer.from(API_SECRET, "base64");
     const apiSignature = crypto.createHmac("sha512", secretBuffer).update(hash).digest("base64");
@@ -76,6 +77,7 @@ app.post("/webhook", async (req, res) => {
       res.status(500).json({ status: "error", message: err.message });
     });
 
+    // Write postData payload to the request body stream
     reqKraken.write(postData);
     reqKraken.end();
 
